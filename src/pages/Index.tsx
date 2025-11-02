@@ -25,6 +25,8 @@ interface EditingEntry {
   hasAllergy: boolean;
 }
 
+const CLOUD_SYNC_URL = 'https://functions.poehali.dev/5ddf72dd-63e6-4130-b9ac-d5e66deb6e56';
+
 const Index = () => {
   const [entries, setEntries] = useState<FoodEntry[]>([]);
   const [productInput, setProductInput] = useState('');
@@ -37,6 +39,32 @@ const Index = () => {
   const [syncing, setSyncing] = useState(false);
   const [editingEntry, setEditingEntry] = useState<EditingEntry | null>(null);
   const [showStatsModal, setShowStatsModal] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+
+  const loadFromCloud = async () => {
+    try {
+      const response = await fetch(CLOUD_SYNC_URL, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const cloudEntries = data.entries.map((e: any) => ({
+          ...e,
+          date: new Date(e.date)
+        }));
+        setEntries(cloudEntries);
+        localStorage.setItem('foodDiary', JSON.stringify(cloudEntries));
+        setIsOnline(true);
+        return true;
+      }
+    } catch (error) {
+      console.warn('Cloud sync unavailable, using local storage');
+      setIsOnline(false);
+    }
+    return false;
+  };
 
   useEffect(() => {
     const savedConfig = localStorage.getItem('mysqlConfig');
@@ -44,15 +72,49 @@ const Index = () => {
       setMysqlConfig(JSON.parse(savedConfig));
     }
 
-    const saved = localStorage.getItem('foodDiary');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setEntries(parsed.map((e: any) => ({ ...e, date: new Date(e.date) })));
-    }
+    const initData = async () => {
+      const cloudLoaded = await loadFromCloud();
+      
+      if (!cloudLoaded) {
+        const saved = localStorage.getItem('foodDiary');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          setEntries(parsed.map((e: any) => ({ ...e, date: new Date(e.date) })));
+        }
+      }
+    };
+
+    initData();
   }, []);
 
   useEffect(() => {
     localStorage.setItem('foodDiary', JSON.stringify(entries));
+    
+    const syncToCloud = async () => {
+      if (entries.length === 0) return;
+      
+      try {
+        await fetch(CLOUD_SYNC_URL, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entries: entries.map(e => ({
+              id: e.id,
+              products: e.products,
+              date: e.date.toISOString(),
+              hasAllergy: e.hasAllergy
+            }))
+          })
+        });
+        setIsOnline(true);
+      } catch (error) {
+        console.warn('Cloud sync failed:', error);
+        setIsOnline(false);
+      }
+    };
+
+    const timeoutId = setTimeout(syncToCloud, 1000);
+    return () => clearTimeout(timeoutId);
   }, [entries]);
 
   useEffect(() => {
@@ -366,7 +428,21 @@ const Index = () => {
                 <Icon name="Apple" size={28} className="text-accent md:w-9 md:h-9" />
                 Дневник питания
               </h1>
-              <p className="text-sm md:text-base text-muted-foreground">Отслеживайте питание и аллергические реакции</p>
+              <p className="text-sm md:text-base text-muted-foreground flex items-center gap-2">
+                Отслеживайте питание и аллергические реакции
+                {isOnline && (
+                  <Badge variant="default" className="bg-green-500 text-xs">
+                    <Icon name="Cloud" size={12} className="mr-1" />
+                    Синхронизировано
+                  </Badge>
+                )}
+                {!isOnline && (
+                  <Badge variant="outline" className="text-xs">
+                    <Icon name="CloudOff" size={12} className="mr-1" />
+                    Офлайн
+                  </Badge>
+                )}
+              </p>
             </div>
             <div className="flex flex-wrap gap-2 w-full sm:w-auto">
               <Button
@@ -380,6 +456,17 @@ const Index = () => {
                 <span className="hidden sm:inline">Экспорт CSV</span>
                 <span className="sm:hidden">CSV</span>
               </Button>
+              <Button
+                onClick={loadFromCloud}
+                variant="outline"
+                size="sm"
+                disabled={syncing}
+                className="flex-1 sm:flex-none"
+              >
+                <Icon name="RefreshCw" size={16} className="mr-1 md:mr-2" />
+                <span className="hidden sm:inline">Обновить</span>
+                <span className="sm:hidden">⟳</span>
+              </Button>
               {mysqlConfig && (
                 <>
                   <Button
@@ -390,8 +477,8 @@ const Index = () => {
                     className="flex-1 sm:flex-none"
                   >
                     <Icon name="Download" size={16} className="mr-1 md:mr-2" />
-                    <span className="hidden sm:inline">{syncing ? 'Загрузка...' : 'Загрузить'}</span>
-                    <span className="sm:hidden">{syncing ? '...' : '↓'}</span>
+                    <span className="hidden sm:inline">{syncing ? 'Загрузка...' : 'MySQL ↓'}</span>
+                    <span className="sm:hidden">{syncing ? '...' : 'DB↓'}</span>
                   </Button>
                   <Button
                     onClick={uploadToMySQL}
@@ -401,8 +488,8 @@ const Index = () => {
                     className="flex-1 sm:flex-none"
                   >
                     <Icon name="Upload" size={16} className="mr-1 md:mr-2" />
-                    <span className="hidden sm:inline">{syncing ? 'Выгрузка...' : 'Выгрузить'}</span>
-                    <span className="sm:hidden">{syncing ? '...' : '↑'}</span>
+                    <span className="hidden sm:inline">{syncing ? 'Выгрузка...' : 'MySQL ↑'}</span>
+                    <span className="sm:hidden">{syncing ? '...' : 'DB↑'}</span>
                   </Button>
                 </>
               )}
