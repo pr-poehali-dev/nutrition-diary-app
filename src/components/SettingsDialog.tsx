@@ -69,24 +69,37 @@ export const SettingsDialog = ({ onConfigChange, currentConfig }: SettingsDialog
   };
 
   const testConnection = async () => {
+    if (!config.host || !config.user || !config.database) {
+      toast.error('Заполните все обязательные поля перед тестированием');
+      return;
+    }
+
     setTesting(true);
     try {
       const response = await fetch('https://functions.poehali.dev/226037d0-a087-48be-82b4-54e0b3622d1f', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'X-DB-Config': JSON.stringify(config)
+          'X-DB-Config': JSON.stringify({
+            host: config.host,
+            port: config.port || '3306',
+            user: config.user,
+            password: config.password,
+            database: config.database
+          })
         }
       });
 
       if (response.ok) {
-        toast.success('✅ Подключение успешно!');
+        toast.success('✅ Подключение успешно! База данных инициализирована.');
       } else {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({ error: 'Не удалось получить ответ от сервера' }));
+        console.error('MySQL connection error:', error);
         toast.error(`Ошибка подключения: ${error.error || 'Неизвестная ошибка'}`);
       }
     } catch (error) {
-      toast.error('Ошибка сети. Проверьте параметры подключения.');
+      console.error('Network error:', error);
+      toast.error(`Ошибка сети: ${error instanceof Error ? error.message : 'Проверьте параметры подключения'}`);
     } finally {
       setTesting(false);
     }

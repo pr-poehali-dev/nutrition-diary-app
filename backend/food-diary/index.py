@@ -52,7 +52,12 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
     
     headers = event.get('headers', {})
-    db_config_header = headers.get('X-DB-Config') or headers.get('x-db-config')
+    db_config_header = None
+    
+    for key in headers:
+        if key.lower() == 'x-db-config':
+            db_config_header = headers[key]
+            break
     
     if not db_config_header:
         return {
@@ -61,7 +66,10 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': '*'
             },
-            'body': json.dumps({'error': 'Missing database configuration'}),
+            'body': json.dumps({
+                'error': 'Missing database configuration',
+                'debug': f'Available headers: {list(headers.keys())}'
+            }),
             'isBase64Encoded': False
         }
     
