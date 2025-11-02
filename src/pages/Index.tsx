@@ -223,6 +223,39 @@ const Index = () => {
     setMysqlConfig(config);
   };
 
+  const exportToCSV = () => {
+    if (entries.length === 0) {
+      toast.error('Нет данных для экспорта');
+      return;
+    }
+
+    const headers = ['Дата и время', 'Продукты', 'Аллергия'];
+    const rows = entries.map(entry => [
+      format(entry.date, 'dd.MM.yyyy HH:mm', { locale: ru }),
+      entry.products.join(', '),
+      entry.hasAllergy ? 'Да' : 'Нет'
+    ]);
+
+    const csvContent = [
+      headers.join(';'),
+      ...rows.map(row => row.join(';'))
+    ].join('\n');
+
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `дневник_питания_${format(new Date(), 'dd-MM-yyyy')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success('CSV-файл скачан!');
+  };
+
   const getAllergyStats = () => {
     const stats: Record<string, { total: number; allergies: number }> = {};
     
@@ -269,6 +302,15 @@ const Index = () => {
               <p className="text-muted-foreground">Отслеживайте питание и аллергические реакции</p>
             </div>
             <div className="flex gap-2">
+              <Button
+                onClick={exportToCSV}
+                variant="outline"
+                size="sm"
+                disabled={entries.length === 0}
+              >
+                <Icon name="FileDown" size={16} className="mr-2" />
+                Экспорт CSV
+              </Button>
               {mysqlConfig && (
                 <>
                   <Button
