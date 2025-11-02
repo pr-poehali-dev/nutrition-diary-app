@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/icon';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { SettingsDialog, MySQLConfig } from '@/components/SettingsDialog';
 
 interface FoodEntry {
   id: string;
@@ -26,8 +27,15 @@ const Index = () => {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filterAllergy, setFilterAllergy] = useState<'all' | 'allergy' | 'safe'>('all');
+  const [mysqlConfig, setMysqlConfig] = useState<MySQLConfig | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
+    const savedConfig = localStorage.getItem('mysqlConfig');
+    if (savedConfig) {
+      setMysqlConfig(JSON.parse(savedConfig));
+    }
+
     const saved = localStorage.getItem('foodDiary');
     if (saved) {
       const parsed = JSON.parse(saved);
@@ -38,6 +46,15 @@ const Index = () => {
   useEffect(() => {
     localStorage.setItem('foodDiary', JSON.stringify(entries));
   }, [entries]);
+
+  useEffect(() => {
+    if (mysqlConfig) {
+      localStorage.setItem('mysqlConfig', JSON.stringify(mysqlConfig));
+      syncWithMySQL();
+    } else {
+      localStorage.removeItem('mysqlConfig');
+    }
+  }, [mysqlConfig]);
 
   const getAllProducts = () => {
     const products = new Set<string>();
@@ -74,7 +91,7 @@ const Index = () => {
     setSelectedProducts(selectedProducts.filter(p => p !== product));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (selectedProducts.length === 0) {
       toast.error('Добавьте хотя бы один продукт');
       return;
@@ -87,15 +104,123 @@ const Index = () => {
       hasAllergy
     };
 
+    if (mysqlConfig) {
+      try {
+        const response = await fetch('https://functions.poehali.dev/226037d0-a087-48be-82b4-54e0b3622d1f', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-DB-Config': JSON.stringify(mysqlConfig)
+          },
+          body: JSON.stringify({
+            id: newEntry.id,
+            products: newEntry.products,
+            date: newEntry.date.toISOString(),
+            hasAllergy: newEntry.hasAllergy
+          })
+        });
+        if (!response.ok) throw new Error('Save failed');
+      } catch (error) {
+        toast.error('Ошибка сохранения в MySQL');
+        return;
+      }
+    }
+
     setEntries([newEntry, ...entries]);
     setSelectedProducts([]);
     setHasAllergy(false);
     toast.success('Запись добавлена!');
   };
 
-  const deleteEntry = (id: string) => {
+  const deleteEntry = async (id: string) => {
+    if (mysqlConfig) {
+      try {
+        const response = await fetch(
+          `https://functions.poehali.dev/226037d0-a087-48be-82b4-54e0b3622d1f?id=${id}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-DB-Config': JSON.stringify(mysqlConfig)
+            }
+          }
+        );
+        if (!response.ok) throw new Error('Delete failed');
+      } catch (error) {
+        toast.error('Ошибка удаления из MySQL');
+        return;
+      }
+    }
     setEntries(entries.filter(e => e.id !== id));
     toast.success('Запись удалена');
+  };
+
+  const syncWithMySQL = async () => {
+    if (!mysqlConfig) return;
+
+    setSyncing(true);
+    try {
+      const response = await fetch('https://functions.poehali.dev/226037d0-a087-48be-82b4-54e0b3622d1f', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-DB-Config': JSON.stringify(mysqlConfig)
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const loadedEntries = data.entries.map((e: any) => ({
+          id: e.id,
+          products: e.products,
+          date: new Date(e.entry_date),
+          hasAllergy: e.has_allergy
+        }));
+        setEntries(loadedEntries);
+        toast.success('Данные загружены из MySQL');
+      }
+    } catch (error) {
+      toast.error('Ошибка синхронизации с MySQL');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const uploadToMySQL = async () => {
+    if (!mysqlConfig) return;
+
+    setSyncing(true);
+    try {
+      const response = await fetch('https://functions.poehali.dev/226037d0-a087-48be-82b4-54e0b3622d1f', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-DB-Config': JSON.stringify(mysqlConfig)
+        },
+        body: JSON.stringify({
+          entries: entries.map(e => ({
+            id: e.id,
+            products: e.products,
+            date: e.date.toISOString(),
+            hasAllergy: e.hasAllergy
+          }))
+        })
+      });
+
+      if (response.ok) {
+        toast.success('Данные выгружены в MySQL');
+      } else {
+        throw new Error('Upload failed');
+      }
+    } catch (error) {
+      toast.error('Ошибка выгрузки в MySQL');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleConfigChange = (config: MySQLConfig | null) => {
+    setMysqlConfig(config);
   };
 
   const getAllergyStats = () => {
@@ -135,11 +260,43 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-foreground mb-2 flex items-center gap-3">
-            <Icon name="Apple" size={36} className="text-accent" />
-            Дневник питания
-          </h1>
-          <p className="text-muted-foreground">Отслеживайте питание и аллергические реакции</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-4xl font-bold text-foreground mb-2 flex items-center gap-3">
+                <Icon name="Apple" size={36} className="text-accent" />
+                Дневник питания
+              </h1>
+              <p className="text-muted-foreground">Отслеживайте питание и аллергические реакции</p>
+            </div>
+            <div className="flex gap-2">
+              {mysqlConfig && (
+                <>
+                  <Button
+                    onClick={syncWithMySQL}
+                    variant="outline"
+                    size="sm"
+                    disabled={syncing}
+                  >
+                    <Icon name="Download" size={16} className="mr-2" />
+                    {syncing ? 'Загрузка...' : 'Загрузить'}
+                  </Button>
+                  <Button
+                    onClick={uploadToMySQL}
+                    variant="outline"
+                    size="sm"
+                    disabled={syncing}
+                  >
+                    <Icon name="Upload" size={16} className="mr-2" />
+                    {syncing ? 'Выгрузка...' : 'Выгрузить'}
+                  </Button>
+                </>
+              )}
+              <SettingsDialog
+                onConfigChange={handleConfigChange}
+                currentConfig={mysqlConfig}
+              />
+            </div>
+          </div>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
