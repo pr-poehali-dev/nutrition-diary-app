@@ -156,8 +156,16 @@ const Index = () => {
       hasAllergy
     };
 
+    setEntries([newEntry, ...entries]);
+    setSelectedProducts([]);
+    setHasAllergy(false);
+    toast.success('Запись добавлена!');
+
     if (mysqlConfig) {
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
         const response = await fetch('https://functions.poehali.dev/226037d0-a087-48be-82b4-54e0b3622d1f', {
           method: 'POST',
           headers: {
@@ -169,24 +177,29 @@ const Index = () => {
             products: newEntry.products,
             date: newEntry.date.toISOString(),
             hasAllergy: newEntry.hasAllergy
-          })
+          }),
+          signal: controller.signal
         });
-        if (!response.ok) throw new Error('Save failed');
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          console.warn('MySQL save failed, but local save succeeded');
+        }
       } catch (error) {
-        toast.error('Ошибка сохранения в MySQL');
-        return;
+        console.warn('MySQL save error:', error);
       }
     }
-
-    setEntries([newEntry, ...entries]);
-    setSelectedProducts([]);
-    setHasAllergy(false);
-    toast.success('Запись добавлена!');
   };
 
   const deleteEntry = async (id: string) => {
+    setEntries(entries.filter(e => e.id !== id));
+    toast.success('Запись удалена');
+
     if (mysqlConfig) {
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
         const response = await fetch(
           `https://functions.poehali.dev/226037d0-a087-48be-82b4-54e0b3622d1f?id=${id}`,
           {
@@ -194,17 +207,19 @@ const Index = () => {
             headers: {
               'Content-Type': 'application/json',
               'X-DB-Config': JSON.stringify(mysqlConfig)
-            }
+            },
+            signal: controller.signal
           }
         );
-        if (!response.ok) throw new Error('Delete failed');
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          console.warn('MySQL delete failed, but local delete succeeded');
+        }
       } catch (error) {
-        toast.error('Ошибка удаления из MySQL');
-        return;
+        console.warn('MySQL delete error:', error);
       }
     }
-    setEntries(entries.filter(e => e.id !== id));
-    toast.success('Запись удалена');
   };
 
   const syncWithMySQL = async () => {
@@ -343,25 +358,27 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
+      <div className="container mx-auto px-4 py-4 md:py-8 max-w-6xl">
+        <div className="mb-6 md:mb-8">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <h1 className="text-4xl font-bold text-foreground mb-2 flex items-center gap-3">
-                <Icon name="Apple" size={36} className="text-accent" />
+              <h1 className="text-2xl md:text-4xl font-bold text-foreground mb-2 flex items-center gap-2 md:gap-3">
+                <Icon name="Apple" size={28} className="text-accent md:w-9 md:h-9" />
                 Дневник питания
               </h1>
-              <p className="text-muted-foreground">Отслеживайте питание и аллергические реакции</p>
+              <p className="text-sm md:text-base text-muted-foreground">Отслеживайте питание и аллергические реакции</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto">
               <Button
                 onClick={exportToCSV}
                 variant="outline"
                 size="sm"
                 disabled={entries.length === 0}
+                className="flex-1 sm:flex-none"
               >
-                <Icon name="FileDown" size={16} className="mr-2" />
-                Экспорт CSV
+                <Icon name="FileDown" size={16} className="mr-1 md:mr-2" />
+                <span className="hidden sm:inline">Экспорт CSV</span>
+                <span className="sm:hidden">CSV</span>
               </Button>
               {mysqlConfig && (
                 <>
@@ -370,18 +387,22 @@ const Index = () => {
                     variant="outline"
                     size="sm"
                     disabled={syncing}
+                    className="flex-1 sm:flex-none"
                   >
-                    <Icon name="Download" size={16} className="mr-2" />
-                    {syncing ? 'Загрузка...' : 'Загрузить'}
+                    <Icon name="Download" size={16} className="mr-1 md:mr-2" />
+                    <span className="hidden sm:inline">{syncing ? 'Загрузка...' : 'Загрузить'}</span>
+                    <span className="sm:hidden">{syncing ? '...' : '↓'}</span>
                   </Button>
                   <Button
                     onClick={uploadToMySQL}
                     variant="outline"
                     size="sm"
                     disabled={syncing}
+                    className="flex-1 sm:flex-none"
                   >
-                    <Icon name="Upload" size={16} className="mr-2" />
-                    {syncing ? 'Выгрузка...' : 'Выгрузить'}
+                    <Icon name="Upload" size={16} className="mr-1 md:mr-2" />
+                    <span className="hidden sm:inline">{syncing ? 'Выгрузка...' : 'Выгрузить'}</span>
+                    <span className="sm:hidden">{syncing ? '...' : '↑'}</span>
                   </Button>
                 </>
               )}
@@ -393,10 +414,10 @@ const Index = () => {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
+        <div className="grid lg:grid-cols-3 gap-4 md:gap-6">
           <div className="lg:col-span-2">
-            <Card className="p-6 mb-6 shadow-sm">
-              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <Card className="p-4 md:p-6 mb-4 md:mb-6 shadow-sm">
+              <h2 className="text-lg md:text-xl font-semibold mb-4 flex items-center gap-2">
                 <Icon name={editingEntry ? "Edit" : "Plus"} size={20} />
                 {editingEntry ? 'Редактировать запись' : 'Добавить запись'}
               </h2>
@@ -495,17 +516,18 @@ const Index = () => {
               </div>
             </Card>
 
-            <Card className="p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold flex items-center gap-2">
+            <Card className="p-4 md:p-6 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
                   <Icon name="List" size={20} />
                   История записей
                 </h2>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     variant={filterAllergy === 'all' ? 'default' : 'outline'}
                     size="sm"
                     onClick={() => setFilterAllergy('all')}
+                    className="flex-1 sm:flex-none"
                   >
                     Все
                   </Button>
@@ -513,23 +535,26 @@ const Index = () => {
                     variant={filterAllergy === 'allergy' ? 'destructive' : 'outline'}
                     size="sm"
                     onClick={() => setFilterAllergy('allergy')}
+                    className="flex-1 sm:flex-none"
                   >
                     <Icon name="AlertTriangle" size={14} className="mr-1" />
-                    Аллергия
+                    <span className="hidden xs:inline">Аллергия</span>
+                    <span className="xs:hidden">⚠️</span>
                   </Button>
                   <Button
                     variant={filterAllergy === 'safe' ? 'default' : 'outline'}
                     size="sm"
                     onClick={() => setFilterAllergy('safe')}
-                    className={filterAllergy === 'safe' ? 'bg-accent hover:bg-accent/90' : ''}
+                    className={`flex-1 sm:flex-none ${filterAllergy === 'safe' ? 'bg-accent hover:bg-accent/90' : ''}`}
                   >
                     <Icon name="Check" size={14} className="mr-1" />
-                    Безопасно
+                    <span className="hidden xs:inline">Безопасно</span>
+                    <span className="xs:hidden">✓</span>
                   </Button>
                 </div>
               </div>
 
-              <ScrollArea className="h-[500px] pr-4">
+              <ScrollArea className="h-[400px] md:h-[500px] pr-2 md:pr-4">
                 {filteredEntries.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <Icon name="FileText" size={48} className="mx-auto mb-4 opacity-50" />
@@ -602,8 +627,8 @@ const Index = () => {
           </div>
 
           <div className="lg:col-span-1">
-            <Card className="p-6 shadow-sm sticky top-8">
-              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <Card className="p-4 md:p-6 shadow-sm lg:sticky lg:top-8">
+              <h2 className="text-lg md:text-xl font-semibold mb-4 flex items-center gap-2">
                 <Icon name="BarChart3" size={20} />
                 Статистика аллергий
               </h2>
