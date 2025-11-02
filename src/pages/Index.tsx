@@ -19,6 +19,12 @@ interface FoodEntry {
   hasAllergy: boolean;
 }
 
+interface EditingEntry {
+  id: string;
+  products: string[];
+  hasAllergy: boolean;
+}
+
 const Index = () => {
   const [entries, setEntries] = useState<FoodEntry[]>([]);
   const [productInput, setProductInput] = useState('');
@@ -29,6 +35,8 @@ const Index = () => {
   const [filterAllergy, setFilterAllergy] = useState<'all' | 'allergy' | 'safe'>('all');
   const [mysqlConfig, setMysqlConfig] = useState<MySQLConfig | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<EditingEntry | null>(null);
+  const [showStatsModal, setShowStatsModal] = useState(false);
 
   useEffect(() => {
     const savedConfig = localStorage.getItem('mysqlConfig');
@@ -91,7 +99,51 @@ const Index = () => {
     setSelectedProducts(selectedProducts.filter(p => p !== product));
   };
 
+  const startEditing = (entry: FoodEntry) => {
+    setEditingEntry({
+      id: entry.id,
+      products: [...entry.products],
+      hasAllergy: entry.hasAllergy
+    });
+    setSelectedProducts([...entry.products]);
+    setHasAllergy(entry.hasAllergy);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEditing = () => {
+    setEditingEntry(null);
+    setSelectedProducts([]);
+    setHasAllergy(false);
+    setProductInput('');
+  };
+
+  const saveEdit = async () => {
+    if (!editingEntry || selectedProducts.length === 0) {
+      toast.error('Добавьте хотя бы один продукт');
+      return;
+    }
+
+    const updatedEntries = entries.map(e => 
+      e.id === editingEntry.id 
+        ? { ...e, products: selectedProducts, hasAllergy }
+        : e
+    );
+
+    setEntries(updatedEntries);
+    cancelEditing();
+    toast.success('Запись обновлена');
+
+    if (mysqlConfig) {
+      await uploadToMySQL();
+    }
+  };
+
   const handleSubmit = async () => {
+    if (editingEntry) {
+      await saveEdit();
+      return;
+    }
+
     if (selectedProducts.length === 0) {
       toast.error('Добавьте хотя бы один продукт');
       return;
@@ -345,8 +397,8 @@ const Index = () => {
           <div className="lg:col-span-2">
             <Card className="p-6 mb-6 shadow-sm">
               <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                <Icon name="Plus" size={20} />
-                Добавить запись
+                <Icon name={editingEntry ? "Edit" : "Plus"} size={20} />
+                {editingEntry ? 'Редактировать запись' : 'Добавить запись'}
               </h2>
 
               <div className="space-y-4">
@@ -418,15 +470,28 @@ const Index = () => {
                   </Label>
                 </div>
 
-                <Button 
-                  onClick={handleSubmit} 
-                  className="w-full" 
-                  size="lg"
-                  disabled={selectedProducts.length === 0}
-                >
-                  <Icon name="Check" size={18} className="mr-2" />
-                  Сохранить запись
-                </Button>
+                <div className="flex gap-2">
+                  {editingEntry && (
+                    <Button 
+                      onClick={cancelEditing}
+                      variant="outline"
+                      className="flex-1" 
+                      size="lg"
+                    >
+                      <Icon name="X" size={18} className="mr-2" />
+                      Отмена
+                    </Button>
+                  )}
+                  <Button 
+                    onClick={handleSubmit} 
+                    className="flex-1" 
+                    size="lg"
+                    disabled={selectedProducts.length === 0}
+                  >
+                    <Icon name="Check" size={18} className="mr-2" />
+                    {editingEntry ? 'Сохранить изменения' : 'Сохранить запись'}
+                  </Button>
+                </div>
               </div>
             </Card>
 
@@ -507,14 +572,26 @@ const Index = () => {
                               </Badge>
                             )}
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => deleteEntry(entry.id)}
-                            className="hover:bg-destructive/10 hover:text-destructive"
-                          >
-                            <Icon name="Trash2" size={18} />
-                          </Button>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => startEditing(entry)}
+                              className="hover:bg-accent/10 hover:text-accent"
+                              title="Редактировать"
+                            >
+                              <Icon name="Edit" size={18} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => deleteEntry(entry.id)}
+                              className="hover:bg-destructive/10 hover:text-destructive"
+                              title="Удалить"
+                            >
+                              <Icon name="Trash2" size={18} />
+                            </Button>
+                          </div>
                         </div>
                       </Card>
                     ))}
