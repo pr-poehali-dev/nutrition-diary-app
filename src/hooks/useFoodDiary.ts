@@ -61,8 +61,6 @@ export const useFoodDiary = () => {
     localStorage.setItem('foodDiary', JSON.stringify(entries));
     
     const syncToCloud = async () => {
-      if (entries.length === 0) return;
-      
       try {
         await fetch(CLOUD_SYNC_URL, {
           method: 'PUT',
